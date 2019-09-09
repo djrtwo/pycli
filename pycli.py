@@ -20,31 +20,64 @@ def convert_raw_to_ssz(raw, ssz_typ):
     return ssz_value
 
 
+def read_or_stdin(source):
+    if not source:
+        return sys.stdin.buffer.read()
+
+    return source.read()
+
+
+def write_or_stdout(output, out):
+    if not out:
+        sys.stdout.buffer.write(output)
+        return
+
+    return out.write(output)
+
+
+def get_pre(pre_source):
+    pre_raw_ssz = read_or_stdin(pre_source)
+    return convert_raw_to_ssz(pre_raw_ssz, spec.BeaconState)
+
+
+def write_post(post_state, out_file):
+    # Encode state as SSZ
+    post_raw_ssz = spec_ssz_impl.serialize(post_state)
+
+    # Write poststate
+    write_or_stdout(post_raw_ssz, out_file)
+
+
+
 @click.group()
-def pycli():
+@click.option('--pre', type=click.File('rb'), help="Pre (Input) path. If none is specified, input is read from STDIN")
+@click.option('--post', type=click.File('wb'), help="Post (Input) path. If none is specified, input is write to STDOUT")
+@click.pass_context
+def pycli(ctx, pre, post):
     presets = loader.load_presets('eth2.0-specs/configs/', 'minimal')
     spec.apply_constants_preset(presets)
 
+    ctx.ensure_object(dict)
+    ctx.obj['PRE'] = pre
+    ctx.obj['POST'] = post
 
-@click.group()
+
+#
+# pycli transition
+#
+@pycli.group()
 def transition():
     pass
 
 
-@click.command()
-@click.option('--pre', type=click.Path(), help="Pre (Input) path. If none is specified, input is read from STDIN")
-@click.option('--post', type=click.Path(), help="Post (Input) path. If none is specified, input is write to STDOUT")
+@transition.command()
 @click.argument("blocks", nargs=-1)
-def blocks(pre, post, blocks):
+@click.pass_context
+def blocks(ctx, blocks):
     block_sources = blocks
 
     # Read and parse prestate
-    if pre:
-        with open(pre, 'rb') as f:
-            pre_raw_ssz = f.read()
-    else:
-        pre_raw_ssz = input()
-    pre_state = convert_raw_to_ssz(pre_raw_ssz, spec.BeaconState)
+    pre_state = get_pre(ctx.obj['PRE'])
 
     # Read and parse blocks
     blocks = []
@@ -59,43 +92,52 @@ def blocks(pre, post, blocks):
     for block in blocks:
         state = spec.state_transition(state, block)
 
-    # Encode state as SSZ
-    post_raw_ssz = spec_ssz_impl.serialize(state)
-
-    # Write poststate
-    sys.stdout.buffer.write(post_raw_ssz)
+    write_post(state, ctx.obj['POST'])
 
 
-@click.command()
-def slots():
-    pass
+@transition.command()
+@click.option("--delta", is_flag=True)
+@click.argument("slots", type=click.INT)
+@click.pass_context
+def slots(ctx, delta, slots):
+    # Read and parse prestate
+    pre_state = get_pre(ctx.obj['PRE'])
+
+    if delta:
+        slots = pre_state.slot + slots
+
+    state = pre_state
+    spec.process_slots(state, slots)
+
+    write_post(state, ctx.obj['POST'])
 
 
-@click.group()
+#
+# pycli pretty
+#
+@pycli.group()
 def pretty():
     pass
 
 
-@click.command()
-@click.argument("state")
+@pretty.command()
+@click.argument("state", type=click.File('rb'), required=False)
 def state(state):
-    # Read and parse prestate
-    if state:
-        with open(state, 'rb') as f:
-            state_raw_ssz = f.read()
-    else:
-        state_raw_ssz = input()
+    state_raw_ssz = read_or_stdin(state)
     state = convert_raw_to_ssz(state_raw_ssz, spec.BeaconState)
 
     print(state)
 
 
-pycli.add_command(transition)
-transition.add_command(blocks)
-transition.add_command(slots)
+@pretty.command()
+@click.argument("block", type=click.File('rb'), required=False)
+def block(block):
+    block_raw_ssz = read_or_stdin(block)
+    block = convert_raw_to_ssz(block_raw_ssz, spec.BeaconBlock)
 
-pycli.add_command(pretty)
-pretty.add_command(state)
+    print(block)
+
+
 
 if __name__ == '__main__':
-    pycli()
+    pycli(obj={})
