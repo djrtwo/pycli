@@ -1,1 +1,3 @@
+Click
 ./eth2.0-specs/test_libs/pyspec/
+./eth2.0-specs/test_libs/config_helpers/
