@@ -38,6 +38,6 @@ python pycli.py --help
 Note that due to some current battle I’m having with the cli builder, the `--pre` and `--post` args must be immediately
 sequentially after the base `pycli.py` and cannot follow the trailing commands (eg `transition`, `blocks`, etc)
 
-_GOOD_: `python pycli.py —pre <sample.ssz> transition blocks ...`
+_GOOD_: `python pycli.py --pre <sample.ssz> transition blocks ...`
 
-_BAD_: `python pycli.py transition —pre <sample.ssz> blocks ...`
+_BAD_: `python pycli.py transition --pre <sample.ssz> blocks ...`
