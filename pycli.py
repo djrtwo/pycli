@@ -1,4 +1,5 @@
 import sys
+import functools
 
 import click
 
@@ -8,6 +9,9 @@ from eth2spec.utils.ssz import ssz_impl as spec_ssz_impl
 from preset_loader import loader
 
 
+#
+# Utils
+#
 def convert_raw_to_ssz(raw, ssz_typ):
     # get the pyssz type
     # read raw with the pyszz from from pyssz
@@ -35,12 +39,12 @@ def write_or_stdout(output, out):
     return out.write(output)
 
 
-def get_pre(pre_source):
+def get_pre_state(pre_source):
     pre_raw_ssz = read_or_stdin(pre_source)
     return convert_raw_to_ssz(pre_raw_ssz, spec.BeaconState)
 
 
-def write_post(post_state, out_file):
+def write_post_state(post_state, out_file):
     # Encode state as SSZ
     post_raw_ssz = spec_ssz_impl.serialize(post_state)
 
@@ -48,36 +52,47 @@ def write_post(post_state, out_file):
     write_or_stdout(post_raw_ssz, out_file)
 
 
+#
+# Common click options
+#
 
+def global_options(func):
+    @click.option('--pre', type=click.File('rb'), help="Pre (Input) path. If none is specified, input is read from STDIN")
+    @click.option('--post', type=click.File('wb'), help="Post (Input) path. If none is specified, input is write to STDOUT")
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    return wrapper
+
+
+#
+# CLI groups and commands
+#
 @click.group()
-@click.option('--pre', type=click.File('rb'), help="Pre (Input) path. If none is specified, input is read from STDIN")
-@click.option('--post', type=click.File('wb'), help="Post (Input) path. If none is specified, input is write to STDOUT")
-@click.pass_context
-def pycli(ctx, pre, post):
+@global_options
+def pycli(pre, post):
     presets = loader.load_presets('eth2.0-specs/configs/', 'minimal')
     spec.apply_constants_preset(presets)
-
-    ctx.ensure_object(dict)
-    ctx.obj['PRE'] = pre
-    ctx.obj['POST'] = post
 
 
 #
 # pycli transition
 #
 @pycli.group()
-def transition():
+@global_options
+def transition(pre, post):
     pass
 
 
 @transition.command()
+@global_options
 @click.argument("blocks", nargs=-1)
-@click.pass_context
-def blocks(ctx, blocks):
+def blocks(pre, post, blocks):
+    print(post)
     block_sources = blocks
 
     # Read and parse prestate
-    pre_state = get_pre(ctx.obj['PRE'])
+    pre_state = get_pre_state(pre)
 
     # Read and parse blocks
     blocks = []
@@ -92,16 +107,16 @@ def blocks(ctx, blocks):
     for block in blocks:
         state = spec.state_transition(state, block)
 
-    write_post(state, ctx.obj['POST'])
+    write_post_state(state, post)
 
 
 @transition.command()
+@global_options
 @click.option("--delta", is_flag=True)
 @click.argument("slots", type=click.INT)
-@click.pass_context
-def slots(ctx, delta, slots):
+def slots(pre, post, delta, slots):
     # Read and parse prestate
-    pre_state = get_pre(ctx.obj['PRE'])
+    pre_state = get_pre_state(pre)
 
     if delta:
         slots = pre_state.slot + slots
@@ -109,7 +124,7 @@ def slots(ctx, delta, slots):
     state = pre_state
     spec.process_slots(state, slots)
 
-    write_post(state, ctx.obj['POST'])
+    write_post_state(state, post)
 
 
 #
@@ -138,6 +153,5 @@ def block(block):
     print(block)
 
 
-
 if __name__ == '__main__':
-    pycli(obj={})
+    pycli()
