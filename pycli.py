@@ -88,7 +88,6 @@ def transition(pre, post):
 @global_options
 @click.argument("blocks", nargs=-1)
 def blocks(pre, post, blocks):
-    print(post)
     block_sources = blocks
 
     # Read and parse prestate
